@@ -19,7 +19,7 @@ def app(server):
 
 
 # Helper: async httpx client pointing at the ASGI app
-async def make_client(app):
+def make_client(app):
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -27,7 +27,7 @@ async def make_client(app):
 
 
 async def test_list_agents_empty(app):
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.get("/.well-known/agents")
     assert resp.status_code == 200
     assert resp.json() == []
@@ -46,7 +46,7 @@ async def test_heartbeat_verifies_agent(app, sample_card):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -66,7 +66,7 @@ async def test_heartbeat_registers_and_lists_agent(app, sample_card):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -88,7 +88,7 @@ async def test_heartbeat_unreachable_agent_stays_unverified(app, sample_card):
     respx.get(base + "/.well-known/agent-card.json").mock(return_value=httpx.Response(503))
 
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -108,7 +108,7 @@ async def test_second_heartbeat_skips_refetch(app, sample_card):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         for _ in range(2):
             await client.post(
                 "/registry/heartbeat",
@@ -154,7 +154,7 @@ async def test_v1_heartbeat_verifies_agent(app, sample_card_v1):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -174,7 +174,7 @@ async def test_v1_heartbeat_registers_and_lists_agent(app, sample_card_v1):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -200,7 +200,7 @@ async def test_v1_falls_back_to_agent_json(app, sample_card_v1):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
@@ -219,7 +219,7 @@ async def test_v03_falls_back_to_agent_card_json(app, sample_card):
     )
 
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
-    async with await make_client(app) as client:
+    async with make_client(app) as client:
         resp = await client.post(
             "/registry/heartbeat",
             content=payload.model_dump_json(),
