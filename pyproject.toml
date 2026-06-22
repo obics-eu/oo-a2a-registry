@@ -30,6 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["uvicorn[standard]>=0.20.0"]
+mcp = ["mcp>=1.0.0"]
 examples = ["uvicorn[standard]>=0.20.0", "a2a-sdk>=1.0.0"]
 dev = [
     "pytest>=7.0",

@@ -90,8 +90,16 @@ class AgentRegistryServer:
         app.router.on_startup.append(self.start_cleanup)
         app.router.on_shutdown.append(self.stop_cleanup)
 
-    def create_app(self) -> FastAPI:
-        """Create and return a standalone FastAPI application."""
+    def create_app(self, *, mcp: bool = False) -> FastAPI:
+        """Create and return a standalone FastAPI application.
+
+        Parameters
+        ----------
+        mcp:
+            Mount MCP SSE endpoints (``/mcp/sse``, ``/mcp/messages``) so
+            registered agent cards are consumable as MCP resources.
+            Requires ``pip install oo-a2a-registry[mcp]``.
+        """
 
         @asynccontextmanager
         async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -106,7 +114,27 @@ class AgentRegistryServer:
             lifespan=lifespan,
         )
         app.include_router(self.build_router())
+        if mcp:
+            self.mount_mcp(app)
         return app
+
+    def mount_mcp(self, app: FastAPI) -> None:
+        """Mount MCP SSE endpoints onto *app*.
+
+        Exposes registered agent cards as MCP resources at:
+            GET  /mcp/sse       — SSE stream
+            POST /mcp/messages  — JSON-RPC messages
+
+        Requires ``pip install oo-a2a-registry[mcp]``.
+        """
+        try:
+            from .mcp_server import mount_mcp_server
+        except ImportError as exc:
+            raise ImportError(
+                "MCP support requires the 'mcp' package: "
+                "pip install 'oo-a2a-registry[mcp]'"
+            ) from exc
+        mount_mcp_server(app, self.provider)
 
     async def start_cleanup(self) -> None:
         """Start the background task that evicts stale agents."""

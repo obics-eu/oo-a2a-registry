@@ -149,6 +149,52 @@ Agent                          Registry Server
 
 `GET /.well-known/agents` returns only agents with `status == available`.
 
+## MCP support
+
+Install the `mcp` extra to expose registered agent cards as [MCP](https://modelcontextprotocol.io/) resources, making them directly consumable by any MCP client (Claude Desktop, Cursor, etc.):
+
+```bash
+pip install "oo-a2a-registry[mcp]"
+```
+
+### Enable MCP in the standalone app
+
+```python
+server = AgentRegistryServer()
+app = server.create_app(mcp=True)   # adds /mcp/sse and /mcp/messages
+```
+
+### Mount MCP onto an existing app
+
+```python
+server = AgentRegistryServer()
+server.setup(app)       # registry endpoints
+server.mount_mcp(app)   # MCP endpoints
+```
+
+### Resources exposed
+
+| URI | Description |
+|-----|-------------|
+| `a2a://agents` | JSON array of all currently verified agent cards |
+| `a2a://agents/{url}` | Individual agent card (url = percent-encoded agent URL) |
+
+A resource template `a2a://agents/{url}` is also advertised so MCP clients can fetch specific agents by URL.
+
+### Connect Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "a2a-registry": {
+      "url": "http://localhost:8000/mcp/sse"
+    }
+  }
+}
+```
+
 ## Custom storage backend
 
 Implement `RegistryProvider` to plug in Redis, a database, etc.:
