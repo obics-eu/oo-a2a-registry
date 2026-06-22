@@ -1,15 +1,11 @@
 """
-Hello World A2A agent — v1.0 style (url inside supportedInterfaces).
+Hello World A2A agent — multiple interfaces using official A2A SDK types.
 
-In A2A v1.0 the top-level ``url`` field is replaced by a
-``supportedInterfaces`` array, where each entry advertises one
-protocol binding together with its endpoint URL and version.
+Demonstrates advertising two protocol bindings (JSON-RPC and gRPC) in a
+single A2A v1.0 agent card built with ``a2a.types``.
 
-The registry discovers this agent via /.well-known/agent-card.json
-(the v1.0 well-known path), with fallback to agent.json.
-
-Install dependencies:
-    pip install oo-a2a-registry[server]
+Install:
+    pip install "oo-a2a-registry[server]" a2a-sdk
 
 Run (start the registry first):
     python examples/registry_server.py              # terminal 1
@@ -24,41 +20,57 @@ from typing import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI
+from google.protobuf.json_format import MessageToDict
 
-from a2a_registry import AgentCard, AgentCapabilities, AgentInterface, AgentSkill, RegistryClient
+from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
+from a2a_registry import RegistryClient
+from a2a_registry.models import AgentCard as RegistryCard
 
 AGENT_BASE_URL = "http://localhost:8002"
 REGISTRY_URL = "http://localhost:8000"
 
-card = AgentCard(
-    name="Hello World Agent (v1.0)",
-    description="A minimal A2A v1.0 agent that greets the world.",
-    supportedInterfaces=[
-        AgentInterface(
-            url=f"{AGENT_BASE_URL}/jsonrpc",
-            protocolBinding="json-rpc/2.0",
-            protocolVersion="1.0",
-        )
-    ],
-    version="1.0.0",
-    capabilities=AgentCapabilities(streaming=False),
-    skills=[
-        AgentSkill(
-            id="greet",
-            name="Greet",
-            description="Say hello to anyone.",
-            tags=["greeting", "hello"],
-            examples=["Hello!", "Greet me"],
-            inputModes=["text/plain"],
-            outputModes=["text/plain"],
-        )
-    ],
-)
+
+def _build_card() -> AgentCard:
+    jsonrpc_iface = AgentInterface()
+    jsonrpc_iface.url = f"{AGENT_BASE_URL}/jsonrpc"
+    jsonrpc_iface.protocol_binding = "json-rpc/2.0"
+    jsonrpc_iface.protocol_version = "1.0"
+
+    grpc_iface = AgentInterface()
+    grpc_iface.url = f"{AGENT_BASE_URL}:50051"
+    grpc_iface.protocol_binding = "grpc"
+    grpc_iface.protocol_version = "1.0"
+
+    skill = AgentSkill()
+    skill.id = "greet"
+    skill.name = "Greet"
+    skill.description = "Say hello to anyone."
+    skill.tags.extend(["greeting", "hello"])
+    skill.input_modes.extend(["text/plain"])
+    skill.output_modes.extend(["text/plain"])
+
+    caps = AgentCapabilities()
+    caps.streaming = True
+
+    card = AgentCard()
+    card.name = "Hello World Agent (multi-interface)"
+    card.description = "A2A v1.0 agent advertising JSON-RPC and gRPC interfaces."
+    card.version = "1.0.0"
+    card.supported_interfaces.extend([jsonrpc_iface, grpc_iface])
+    card.capabilities.CopyFrom(caps)
+    card.skills.append(skill)
+    card.default_input_modes.extend(["text/plain"])
+    card.default_output_modes.extend(["text/plain"])
+    return card
+
+
+_a2a_card = _build_card()
+_registry_card = RegistryCard.model_validate(MessageToDict(_a2a_card))
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with RegistryClient(REGISTRY_URL, card, interval=30):
+    async with RegistryClient(REGISTRY_URL, _registry_card, interval=30):
         yield
 
 
@@ -68,8 +80,7 @@ app = FastAPI(title="Hello World Agent v1.0", lifespan=lifespan)
 @app.get("/.well-known/agent-card.json")
 @app.get("/.well-known/agent.json")
 async def agent_card():
-    """Serve the A2A v1.0 agent card."""
-    return card.model_dump(exclude_none=True)
+    return MessageToDict(_a2a_card)
 
 
 if __name__ == "__main__":
