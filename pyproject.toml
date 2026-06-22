@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oo-a2a-registry"
+version = "0.1.0"
+description = "Server and client library for A2A agent discovery via heartbeat registration"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["a2a", "agent", "registry", "discovery", "fastapi", "agent-to-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+dependencies = [
+    "fastapi>=0.100.0",
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+server = ["uvicorn[standard]>=0.20.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "httpx>=0.24.0",
+    "uvicorn[standard]>=0.20.0",
+    "respx>=0.20",
+]
+
+[project.urls]
+Homepage = "https://github.com/obics-eu/oo-a2a-registry"
+Issues = "https://github.com/obics-eu/oo-a2a-registry/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/a2a_registry"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
