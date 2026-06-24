@@ -9,7 +9,7 @@ from typing import AsyncIterator, List, Optional
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, FastAPI, Header
+from fastapi import APIRouter, FastAPI, Header, Response
 
 from ..models import AgentCard, AgentStatus, HeartbeatRequest, HeartbeatResponse, to_v1, to_v03
 from .registry import MemoryRegistryProvider, RegistryProvider
@@ -41,8 +41,8 @@ class AgentRegistryServer:
         Storage backend. Defaults to :class:`MemoryRegistryProvider`.
     stale_multiplier:
         An agent is evicted when its last heartbeat is older than
-        ``stale_multiplier * interval`` seconds (default 3).
-    cleanup_interval:
+        ``stale_multiplier * expected_heartbeat_interval`` seconds (default 3).
+    expected_heartbeat_interval:
         How often (in seconds) the background cleanup task runs (default 30).
     fetch_timeout:
         HTTP timeout (seconds) when fetching a remote agent card (default 10).
@@ -52,12 +52,16 @@ class AgentRegistryServer:
         self,
         provider: Optional[RegistryProvider] = None,
         stale_multiplier: int = 3,
-        cleanup_interval: int = 30,
+        expected_heartbeat_interval: Optional[int] = None,
         fetch_timeout: float = 10.0,
     ) -> None:
         self.provider = provider or MemoryRegistryProvider()
         self.stale_multiplier = stale_multiplier
-        self.cleanup_interval = cleanup_interval
+        self.expected_heartbeat_interval = (
+            expected_heartbeat_interval
+            if expected_heartbeat_interval is not None
+            else server_config.get_expected_heartbeat_interval()
+        )
         self.fetch_timeout = fetch_timeout
         self._cleanup_task: Optional[asyncio.Task] = None
 
@@ -85,13 +89,20 @@ class AgentRegistryServer:
                 return [to_v03(c) for c in cards]
             return [to_v1(c) for c in cards]
 
-        @router.post(HEARTBEAT_ENDPOINT, response_model=HeartbeatResponse)
+        @router.post(HEARTBEAT_ENDPOINT, status_code=202, response_model=HeartbeatResponse)
         async def receive_heartbeat(
             request: HeartbeatRequest,
+            response: Response,
             a2a_version: Optional[str] = Header(None),  # noqa: ARG001 — informational
         ) -> HeartbeatResponse:
-            """Accept a heartbeat from an agent client."""
-            return await self._handle_heartbeat(request)
+            """Accept a heartbeat from an agent client.
+
+            Returns 202 Accepted with a ``Retry-After`` header indicating the
+            expected next heartbeat interval in seconds.
+            """
+            result = await self._handle_heartbeat(request)
+            response.headers["Retry-After"] = str(self.expected_heartbeat_interval)
+            return result
 
         return router
 
@@ -155,7 +166,7 @@ class AgentRegistryServer:
         """Start the background task that evicts stale agents."""
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-            logger.info("Registry cleanup task started (interval=%ds)", self.cleanup_interval)
+            logger.info("Registry cleanup task started (interval=%ds)", self.expected_heartbeat_interval)
 
     async def stop_cleanup(self) -> None:
         """Cancel the background cleanup task."""
@@ -223,7 +234,7 @@ class AgentRegistryServer:
     async def _cleanup_loop(self) -> None:
         while True:
             try:
-                await asyncio.sleep(self.cleanup_interval)
+                await asyncio.sleep(self.expected_heartbeat_interval)
                 stale = await self.provider.get_stale(self.stale_multiplier)
                 for url in stale:
                     logger.info("Evicting stale agent: %s", url)

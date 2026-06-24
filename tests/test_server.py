@@ -52,7 +52,7 @@ async def test_heartbeat_verifies_agent(app, sample_card):
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
     assert body["verified"] is True
     assert body["status"] == "ok"
@@ -160,7 +160,7 @@ async def test_v1_heartbeat_verifies_agent(app, sample_card_v1):
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
     assert body["verified"] is True
     assert body["status"] == "ok"
@@ -226,3 +226,62 @@ async def test_v03_falls_back_to_agent_card_json(app, sample_card):
             headers={"Content-Type": "application/json"},
         )
     assert resp.json()["verified"] is True
+
+
+# ---------------------------------------------------------------------------
+# Retry-After / 202 behaviour
+# ---------------------------------------------------------------------------
+
+@respx.mock
+async def test_heartbeat_returns_202(app, sample_card):
+    base = sample_card.url.rstrip("/")
+    respx.get(base + "/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=sample_card.model_dump())
+    )
+    payload = HeartbeatRequest(agent_card=sample_card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/registry/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.status_code == 202
+
+
+@respx.mock
+async def test_heartbeat_includes_retry_after_header(sample_card):
+    """Retry-After header reflects the server's expected_heartbeat_interval."""
+    base = sample_card.url.rstrip("/")
+    respx.get(base + "/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=sample_card.model_dump())
+    )
+    server = AgentRegistryServer(expected_heartbeat_interval=45)
+    app = server.create_app()
+    payload = HeartbeatRequest(agent_card=sample_card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/registry/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.headers["Retry-After"] == "45"
+
+
+@respx.mock
+async def test_heartbeat_retry_after_uses_env_default(sample_card, monkeypatch):
+    """When no explicit interval is set, Retry-After comes from EXPECTED_HEARTBEAT_INTERVAL."""
+    monkeypatch.setenv("EXPECTED_HEARTBEAT_INTERVAL", "120")
+    base = sample_card.url.rstrip("/")
+    respx.get(base + "/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=sample_card.model_dump())
+    )
+    server = AgentRegistryServer()
+    app = server.create_app()
+    payload = HeartbeatRequest(agent_card=sample_card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/registry/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.headers["Retry-After"] == "120"

@@ -50,7 +50,7 @@ class RegistryClient:
         self,
         registry_url: Optional[str] = None,
         agent_card: Optional[AgentCard] = None,
-        interval: int = 60,
+        interval: Optional[int] = None,
         timeout: float = 10.0,
         a2a_version: Optional[str] = None,
     ) -> None:
@@ -63,7 +63,9 @@ class RegistryClient:
             raise ValueError("agent_card is required")
         self.registry_url = resolved_url.rstrip("/")
         self.agent_card = agent_card
-        self.interval = interval
+        self.interval: int = (
+            interval if interval is not None else client_config.get_heartbeat_interval()
+        )
         self.timeout = timeout
         self.a2a_version = a2a_version or client_config.get_a2a_version()
         self._task: Optional[asyncio.Task] = None
@@ -133,6 +135,20 @@ class RegistryClient:
                     timeout=self.timeout,
                 )
                 resp.raise_for_status()
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after is not None:
+                    try:
+                        new_interval = int(retry_after)
+                        if new_interval != self.interval:
+                            logger.info(
+                                "Adjusting heartbeat interval for '%s': %ds → %ds",
+                                self.agent_card.name,
+                                self.interval,
+                                new_interval,
+                            )
+                            self.interval = new_interval
+                    except ValueError:
+                        pass
                 return HeartbeatResponse.model_validate(resp.json())
         except Exception as exc:
             logger.warning(

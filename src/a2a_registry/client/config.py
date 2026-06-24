@@ -13,3 +13,8 @@ def get_registry_url() -> str | None:
 def get_a2a_version() -> str:
     """Return ``A2A_VERSION`` env var (default ``'1.0'``)."""
     return os.getenv("A2A_VERSION", "1.0")
+
+
+def get_heartbeat_interval() -> int:
+    """Return ``HEARTBEAT_INTERVAL`` env var in seconds (default 60)."""
+    return int(os.getenv("HEARTBEAT_INTERVAL", "60"))
