@@ -72,7 +72,7 @@ async def test_heartbeat_registers_and_lists_agent(app, sample_card):
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
-        resp = await client.get("/.well-known/agents")
+        resp = await client.get("/.well-known/agents", headers={"A2A-Version": "0.3"})
 
     assert resp.status_code == 200
     agents = resp.json()

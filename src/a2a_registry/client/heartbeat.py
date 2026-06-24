@@ -8,10 +8,13 @@ from typing import Optional
 
 import httpx
 
-from ..models import AgentCard, HeartbeatRequest, HeartbeatResponse
+from ..models import AgentCard, HeartbeatRequest, HeartbeatResponse, to_v1, to_v03
 from ..server.app import HEARTBEAT_ENDPOINT
+from . import config as client_config
 
 logger = logging.getLogger(__name__)
+
+_A2A_VERSION_HEADER = "A2A-Version"
 
 
 class RegistryClient:
@@ -26,26 +29,43 @@ class RegistryClient:
     ----------
     registry_url:
         Base URL of the registry server (e.g. ``"http://registry:8000"``).
+        If *None*, falls back to the ``REGISTRY_URL`` environment variable.
+        Raises :exc:`ValueError` if neither is provided.
     agent_card:
-        The A2A agent card describing this agent.
+        The A2A agent card describing this agent (v0.3 or v1.0).
     interval:
         Heartbeat interval in seconds (default 60).
         The registry uses this value to decide when the agent is stale.
     timeout:
         HTTP request timeout in seconds (default 10).
+    a2a_version:
+        A2A protocol version used when sending the card (``"1.0"`` or
+        ``"0.3"``).  The card is converted to this format before sending,
+        regardless of the format it was passed in as.
+        Overrides the ``A2A_VERSION`` environment variable.
+        Defaults to the ``A2A_VERSION`` env var, or ``"1.0"`` if unset.
     """
 
     def __init__(
         self,
-        registry_url: str,
-        agent_card: AgentCard,
+        registry_url: Optional[str] = None,
+        agent_card: Optional[AgentCard] = None,
         interval: int = 60,
         timeout: float = 10.0,
+        a2a_version: Optional[str] = None,
     ) -> None:
-        self.registry_url = registry_url.rstrip("/")
+        resolved_url = registry_url or client_config.get_registry_url()
+        if resolved_url is None:
+            raise ValueError(
+                "registry_url must be provided or set via the REGISTRY_URL environment variable"
+            )
+        if agent_card is None:
+            raise ValueError("agent_card is required")
+        self.registry_url = resolved_url.rstrip("/")
         self.agent_card = agent_card
         self.interval = interval
         self.timeout = timeout
+        self.a2a_version = a2a_version or client_config.get_a2a_version()
         self._task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------
@@ -57,10 +77,11 @@ class RegistryClient:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._heartbeat_loop())
             logger.info(
-                "Heartbeat started — agent '%s' → %s (interval=%ds)",
+                "Heartbeat started — agent '%s' → %s (interval=%ds, a2a_version=%s)",
                 self.agent_card.name,
                 self.registry_url,
                 self.interval,
+                self.a2a_version,
             )
 
     async def stop(self) -> None:
@@ -88,17 +109,27 @@ class RegistryClient:
         """
         Send one heartbeat immediately.
 
+        The agent card is converted to the configured A2A version before
+        sending, independent of the format it was passed in as.
         Returns the parsed :class:`HeartbeatResponse` on success, or ``None``
         if the request failed.
         """
+        if self.a2a_version.startswith("0"):
+            send_card = to_v03(self.agent_card)
+        else:
+            send_card = to_v1(self.agent_card)
+
         url = self.registry_url + HEARTBEAT_ENDPOINT
-        payload = HeartbeatRequest(agent_card=self.agent_card, interval=self.interval)
+        payload = HeartbeatRequest(agent_card=send_card, interval=self.interval)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
+            async with httpx.AsyncClient() as http:
+                resp = await http.post(
                     url,
                     content=payload.model_dump_json(),
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        _A2A_VERSION_HEADER: self.a2a_version,
+                    },
                     timeout=self.timeout,
                 )
                 resp.raise_for_status()

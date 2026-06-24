@@ -96,6 +96,46 @@ class AgentCard(BaseModel):
         return self.supportedInterfaces[0].url  # type: ignore[index]
 
 
+def card_a2a_version(card: "AgentCard") -> str:
+    """Return the A2A protocol version of a card: ``'1.0'`` or ``'0.3'``."""
+    return "1.0" if card.supportedInterfaces else "0.3"
+
+
+def to_v1(card: "AgentCard") -> "AgentCard":
+    """Return *card* in A2A v1.0 format (url inside ``supportedInterfaces``).
+
+    If the card is already v1.0, returns it unchanged.
+    """
+    if card.supportedInterfaces:
+        return card
+    binding = "json-rpc/2.0"
+    if card.preferredTransport:
+        t = card.preferredTransport.upper()
+        if "GRPC" in t:
+            binding = "grpc"
+        elif t == "HTTP":
+            binding = "http"
+    iface = AgentInterface(url=card.url, protocolBinding=binding)
+    data = card.model_dump()
+    data["supportedInterfaces"] = [iface.model_dump()]
+    data["url"] = None
+    return AgentCard.model_validate(data)
+
+
+def to_v03(card: "AgentCard") -> "AgentCard":
+    """Return *card* in A2A v0.3 format (top-level ``url`` field).
+
+    If the card is already v0.3, returns it unchanged.
+    """
+    if card.url:
+        return card
+    first = card.supportedInterfaces[0]  # type: ignore[index]
+    data = card.model_dump()
+    data["url"] = first.url
+    data["supportedInterfaces"] = None
+    return AgentCard.model_validate(data)
+
+
 class AgentStatus(str, Enum):
     available = "available"
     unverified = "unverified"

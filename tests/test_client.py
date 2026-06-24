@@ -43,7 +43,7 @@ async def test_send_once_posts_correct_payload(sample_card):
         return_value=httpx.Response(200, json={"status": "ok", "verified": True})
     )
 
-    client = RegistryClient(REGISTRY_URL, sample_card, interval=45)
+    client = RegistryClient(REGISTRY_URL, sample_card, interval=45, a2a_version="0.3")
     await client.send_once()
 
     assert route.called

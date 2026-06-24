@@ -9,10 +9,11 @@ from typing import AsyncIterator, List, Optional
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Header
 
-from ..models import AgentCard, AgentStatus, HeartbeatRequest, HeartbeatResponse
+from ..models import AgentCard, AgentStatus, HeartbeatRequest, HeartbeatResponse, to_v1, to_v03
 from .registry import MemoryRegistryProvider, RegistryProvider
+from . import config as server_config
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,26 @@ class AgentRegistryServer:
         router = APIRouter()
 
         @router.get(AGENTS_ENDPOINT, response_model=List[AgentCard])
-        async def list_agents() -> List[AgentCard]:
-            """Return all verified, active agents."""
-            return await self.provider.list_available()
+        async def list_agents(
+            a2a_version: Optional[str] = Header(None),
+        ) -> List[AgentCard]:
+            """Return all verified agents, serialised in the requested A2A version.
+
+            The ``A2A-Version`` request header controls the output format
+            (``"1.0"`` or ``"0.3"``).  Falls back to the ``A2A_VERSION``
+            environment variable (default ``"1.0"``) when the header is absent.
+            """
+            effective_version = a2a_version or server_config.get_a2a_version()
+            cards = await self.provider.list_available()
+            if effective_version.startswith("0"):
+                return [to_v03(c) for c in cards]
+            return [to_v1(c) for c in cards]
 
         @router.post(HEARTBEAT_ENDPOINT, response_model=HeartbeatResponse)
-        async def receive_heartbeat(request: HeartbeatRequest) -> HeartbeatResponse:
+        async def receive_heartbeat(
+            request: HeartbeatRequest,
+            a2a_version: Optional[str] = Header(None),  # noqa: ARG001 — informational
+        ) -> HeartbeatResponse:
             """Accept a heartbeat from an agent client."""
             return await self._handle_heartbeat(request)
 
