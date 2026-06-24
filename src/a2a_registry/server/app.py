@@ -51,18 +51,26 @@ class AgentRegistryServer:
     def __init__(
         self,
         provider: Optional[RegistryProvider] = None,
-        stale_multiplier: int = 3,
+        stale_multiplier: Optional[int] = None,
         expected_heartbeat_interval: Optional[int] = None,
-        fetch_timeout: float = 10.0,
+        fetch_timeout: Optional[float] = None,
     ) -> None:
         self.provider = provider or MemoryRegistryProvider()
-        self.stale_multiplier = stale_multiplier
+        self.stale_multiplier = (
+            stale_multiplier
+            if stale_multiplier is not None
+            else server_config.get_stale_multiplier()
+        )
         self.expected_heartbeat_interval = (
             expected_heartbeat_interval
             if expected_heartbeat_interval is not None
             else server_config.get_expected_heartbeat_interval()
         )
-        self.fetch_timeout = fetch_timeout
+        self.fetch_timeout = (
+            fetch_timeout
+            if fetch_timeout is not None
+            else server_config.get_fetch_timeout()
+        )
         self._cleanup_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------

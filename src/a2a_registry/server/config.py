@@ -15,6 +15,16 @@ def get_expected_heartbeat_interval() -> int:
     return int(os.getenv("EXPECTED_HEARTBEAT_INTERVAL", "60"))
 
 
+def get_stale_multiplier() -> int:
+    """Return ``STALE_MULTIPLIER`` env var (default 3)."""
+    return int(os.getenv("STALE_MULTIPLIER", "3"))
+
+
+def get_fetch_timeout() -> float:
+    """Return ``FETCH_TIMEOUT`` env var in seconds (default 10.0)."""
+    return float(os.getenv("FETCH_TIMEOUT", "10.0"))
+
+
 def get_registry_path() -> str:
     """Return ``REGISTRY_PATH`` env var (default ``'.'``)."""
     return os.getenv("REGISTRY_PATH", ".")
