@@ -164,7 +164,7 @@ async def test_read_unknown_resource_raises():
 async def test_mcp_endpoints_mounted_via_create_app():
     server = AgentRegistryServer()
     app = server.create_app(mcp=True)
-    routes = {r.path for r in app.routes}
+    routes = {r.path for r in app.routes if hasattr(r, "path")}
     assert MCP_SSE_PATH in routes
     assert MCP_POST_PATH in routes
 
@@ -174,7 +174,7 @@ async def test_mount_mcp_explicit():
     server = AgentRegistryServer()
     app = FastAPI()
     server.mount_mcp(app)
-    routes = {r.path for r in app.routes}
+    routes = {r.path for r in app.routes if hasattr(r, "path")}
     assert MCP_SSE_PATH in routes
     assert MCP_POST_PATH in routes
 
@@ -182,6 +182,6 @@ async def test_mount_mcp_explicit():
 async def test_create_app_without_mcp_has_no_mcp_routes():
     server = AgentRegistryServer()
     app = server.create_app()
-    routes = {r.path for r in app.routes}
+    routes = {r.path for r in app.routes if hasattr(r, "path")}
     assert MCP_SSE_PATH not in routes
     assert MCP_POST_PATH not in routes
