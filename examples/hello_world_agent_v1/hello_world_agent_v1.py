@@ -4,17 +4,23 @@ Hello World A2A agent — multiple interfaces using official A2A SDK types.
 Demonstrates advertising two protocol bindings (JSON-RPC and gRPC) in a
 single A2A v1.0 agent card built with ``a2a.types``.
 
-Install:
-    pip install "oo-a2a-registry[server]" a2a-sdk
+Setup (from this directory):
+    python -m venv .venv
+    .venv/bin/pip install -r requirements.txt
 
 Run (start the registry first):
-    python examples/registry_server.py              # terminal 1
-    python examples/hello_world_agent_v1.py         # terminal 2
+    ../registry_server/.venv/bin/python ../registry_server/registry_server.py  # terminal 1
+    .venv/bin/python hello_world_agent_v1.py                                   # terminal 2
 
 Verify:
     curl -s http://localhost:8000/.well-known/agents | python -m json.tool
+
+Environment:
+    PORT         — port to listen on (default 8002)
+    REGISTRY_URL — registry base URL (default http://localhost:8000)
 """
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -26,8 +32,9 @@ from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
 from a2a_registry import RegistryClient
 from a2a_registry.models import AgentCard as RegistryCard
 
-AGENT_BASE_URL = "http://localhost:8002"
-REGISTRY_URL = "http://localhost:8000"
+PORT = int(os.getenv("PORT", "8002"))
+AGENT_BASE_URL = f"http://localhost:{PORT}"
+REGISTRY_URL = os.getenv("REGISTRY_URL", "http://localhost:8000")
 
 
 def _build_card() -> AgentCard:
@@ -37,7 +44,7 @@ def _build_card() -> AgentCard:
     jsonrpc_iface.protocol_version = "1.0"
 
     grpc_iface = AgentInterface()
-    grpc_iface.url = f"{AGENT_BASE_URL}:50051"
+    grpc_iface.url = "http://localhost:50051"
     grpc_iface.protocol_binding = "grpc"
     grpc_iface.protocol_version = "1.0"
 
@@ -84,4 +91,4 @@ async def agent_card():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8002, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

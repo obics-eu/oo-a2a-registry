@@ -9,17 +9,23 @@ The agent is served under a basepath (http://localhost:8001/basepath) to
 demonstrate that the registry discovers well-known cards below a basepath,
 not only at the bare origin.
 
-Install:
-    pip install "oo-a2a-registry[server]" a2a-sdk
+Setup (from this directory):
+    python -m venv .venv
+    .venv/bin/pip install -r requirements.txt
 
 Run (start the registry first):
-    python examples/registry_server.py          # terminal 1
-    python examples/hello_world_agent.py        # terminal 2
+    ../registry_server/.venv/bin/python ../registry_server/registry_server.py  # terminal 1
+    .venv/bin/python hello_world_agent.py                                      # terminal 2
 
 Verify:
     curl -s http://localhost:8000/.well-known/agents | python -m json.tool
+
+Environment:
+    PORT         — port to listen on (default 8001)
+    REGISTRY_URL — registry base URL (default http://localhost:8000)
 """
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -31,8 +37,9 @@ from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
 from a2a_registry import RegistryClient
 from a2a_registry.models import AgentCard as RegistryCard
 
-AGENT_BASE_URL = "http://localhost:8001/basepath"
-REGISTRY_URL = "http://localhost:8000"
+PORT = int(os.getenv("PORT", "8001"))
+AGENT_BASE_URL = f"http://localhost:{PORT}/basepath"
+REGISTRY_URL = os.getenv("REGISTRY_URL", "http://localhost:8000")
 
 
 def _build_card() -> AgentCard:
@@ -81,4 +88,4 @@ async def agent_card():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

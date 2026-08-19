@@ -98,20 +98,28 @@ print(result.verified)
 
 ## Examples
 
-Runnable examples are in the [`examples/`](examples/) directory:
+Runnable examples are in the [`examples/`](examples/) directory. Each example
+lives in its own subdirectory with a `requirements.txt` and runs from an
+isolated venv that installs `oo-a2a-registry` from PyPI:
 
-| File | Description |
-|------|-------------|
-| [`registry_server.py`](examples/registry_server.py) | Standalone registry on port 8000 |
-| [`hello_world_agent.py`](examples/hello_world_agent.py) | Hello World agent (A2A v0.3) on port 8001 |
-| [`hello_world_agent_v1.py`](examples/hello_world_agent_v1.py) | Hello World agent (A2A v1.0) on port 8002 |
+| Directory | Description |
+|-----------|-------------|
+| [`registry_server/`](examples/registry_server/) | Standalone registry on port 8000 |
+| [`hello_world_agent/`](examples/hello_world_agent/) | Hello World agent under a basepath, on port 8001 |
+| [`hello_world_agent_v1/`](examples/hello_world_agent_v1/) | Multi-interface agent (JSON-RPC + gRPC) on port 8002 |
 
 ```bash
-pip install "oo-a2a-registry[server]"
-python examples/registry_server.py &
-python examples/hello_world_agent.py &
+cd examples
+for d in registry_server hello_world_agent hello_world_agent_v1; do
+    (cd "$d" && python -m venv .venv && .venv/bin/pip install -r requirements.txt)
+done
+(cd registry_server   && .venv/bin/python registry_server.py)   &
+(cd hello_world_agent && .venv/bin/python hello_world_agent.py) &
 curl -s http://localhost:8000/.well-known/agents | python -m json.tool
 ```
+
+See [`examples/README.md`](examples/README.md) for details (`PORT` and
+`REGISTRY_URL` env overrides).
 
 ## A2A version compatibility
 
