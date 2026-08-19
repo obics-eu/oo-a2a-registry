@@ -21,13 +21,23 @@ logger = logging.getLogger(__name__)
 _AGENT_CARD_PATH_V1 = "/.well-known/agent-card.json"
 _AGENT_CARD_PATH_V03 = "/.well-known/agent.json"
 AGENTS_ENDPOINT = "/.well-known/agents"
-HEARTBEAT_ENDPOINT = "/registry/heartbeat"
+HEARTBEAT_ENDPOINT = AGENTS_ENDPOINT + "/heartbeat"
 
 
-def _origin(url: str) -> str:
-    """Extract scheme://host:port from a URL for .well-known discovery."""
+def _candidate_bases(url: str) -> List[str]:
+    """Candidate base URLs for .well-known discovery, most specific first.
+
+    Supports agents served under a basepath: for
+    ``http://host:8001/basepath/jsonrpc`` the candidates are
+    ``http://host:8001/basepath/jsonrpc``, ``http://host:8001/basepath``
+    and finally the bare origin ``http://host:8001``.
+    """
     parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}"
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    segments = [s for s in parsed.path.split("/") if s]
+    bases = [origin + "/" + "/".join(segments[:i]) for i in range(len(segments), 0, -1)]
+    bases.append(origin)
+    return bases
 
 
 class AgentRegistryServer:
@@ -144,7 +154,7 @@ class AgentRegistryServer:
         app = FastAPI(
             title="A2A Agent Registry",
             description="Agent discovery registry for A2A agents",
-            version="0.1.0",
+            version="0.2.0",
             lifespan=lifespan,
         )
         app.include_router(self.build_router())
@@ -218,8 +228,11 @@ class AgentRegistryServer:
 
         For v1.0 agents (with supportedInterfaces) tries agent-card.json first,
         then falls back to agent.json. For v0.3 agents the order is reversed.
+        Agents served under a basepath (e.g. ``http://host:8001/basepath``)
+        are supported: discovery starts at the full URL path and strips one
+        segment at a time down to the bare origin.
         """
-        base = _origin(agent_card.effective_url)
+        bases = _candidate_bases(agent_card.effective_url)
 
         if agent_card.supportedInterfaces is not None:
             paths = (_AGENT_CARD_PATH_V1, _AGENT_CARD_PATH_V03)
@@ -227,16 +240,17 @@ class AgentRegistryServer:
             paths = (_AGENT_CARD_PATH_V03, _AGENT_CARD_PATH_V1)
 
         async with httpx.AsyncClient() as client:
-            for path in paths:
-                url = base + path
-                try:
-                    resp = await client.get(url, timeout=self.fetch_timeout)
-                    resp.raise_for_status()
-                    return AgentCard.model_validate(resp.json())
-                except Exception as exc:
-                    logger.debug("Could not fetch agent card from %s: %s", url, exc)
+            for base in bases:
+                for path in paths:
+                    url = base + path
+                    try:
+                        resp = await client.get(url, timeout=self.fetch_timeout)
+                        resp.raise_for_status()
+                        return AgentCard.model_validate(resp.json())
+                    except Exception as exc:
+                        logger.debug("Could not fetch agent card from %s: %s", url, exc)
 
-        logger.warning("Could not fetch agent card for %s", base)
+        logger.warning("Could not fetch agent card for %s", agent_card.effective_url)
         return None
 
     async def _cleanup_loop(self) -> None:

@@ -8,7 +8,7 @@ Supports **A2A v0.3** (top-level `url` field, `agent.json` discovery) and **A2A 
 
 | Component | What it does |
 |-----------|--------------|
-| **Server** | Exposes `GET /.well-known/agents` returning live A2A agent cards (format controlled by `A2A-Version` request header). Accepts `POST /registry/heartbeat` — responds **202** with `Retry-After` header. Verifies agents by fetching their `.well-known` card once. Evicts agents that exceed `STALE_MULTIPLIER × interval` seconds of silence. |
+| **Server** | Exposes `GET /.well-known/agents` returning live A2A agent cards (format controlled by `A2A-Version` request header). Accepts `POST /.well-known/agents/heartbeat` — responds **202** with `Retry-After` header. Verifies agents by fetching their `.well-known` card once (basepath-aware). Evicts agents that exceed `STALE_MULTIPLIER × interval` seconds of silence. |
 | **Client** | Sends the agent's `AgentCard` to the registry as a background task. Initial interval defaults to `HEARTBEAT_INTERVAL` env var (60 s) and is automatically adjusted to the server's `Retry-After` value. Converts the card to the configured `A2A_VERSION` format before sending. |
 
 ## Installation
@@ -41,7 +41,7 @@ from a2a_registry import AgentRegistryServer
 
 app = FastAPI()
 registry = AgentRegistryServer()
-registry.setup(app)          # adds /.well-known/agents and /registry/heartbeat
+registry.setup(app)          # adds /.well-known/agents and /.well-known/agents/heartbeat
 ```
 
 ### Agent client — A2A v0.3
@@ -150,22 +150,37 @@ curl -H "A2A-Version: 0.3" http://localhost:8000/.well-known/agents
 ```
 Agent                              Registry Server
   |                                      |
-  |-- POST /registry/heartbeat --------> |
+  |-- POST /.well-known/agents/heartbeat --------> |
   |   { agent_card, interval }           |
   |   A2A-Version: 1.0                   |
-  |                                      |-- GET {origin}/.well-known/agent-card.json  (v1.0)
+  |                                      |-- GET {base}/.well-known/agent-card.json  (v1.0)
   |                                      |         — or —
-  |                                      |-- GET {origin}/.well-known/agent.json       (v0.3)
+  |                                      |-- GET {base}/.well-known/agent.json       (v0.3)
   |                                      |   (once, to verify reachability)
   |                                      |-- store as "available"
   |<-- 202 { status: "ok", verified } -- |
   |    Retry-After: 60                   |
   |                                      |
-  |-- POST /registry/heartbeat --------> |  (every Retry-After seconds)
+  |-- POST /.well-known/agents/heartbeat --------> |  (every Retry-After seconds)
   |                                      |-- refresh last_heartbeat timestamp
   |                                      |
   |   (silence > STALE_MULTIPLIER × interval)  |-- evict from registry
 ```
+
+### Agents behind a basepath
+
+Agent base URLs may include a basepath, e.g. `http://my-agent:8080/basepath`.
+During verification the registry tries the `.well-known` card at the most
+specific path first and strips one path segment at a time down to the bare
+origin:
+
+```
+http://my-agent:8080/basepath/.well-known/agent-card.json   ← tried first
+http://my-agent:8080/.well-known/agent-card.json            ← fallback
+```
+
+This also applies to A2A v1.0 interface URLs such as
+`http://my-agent:8080/basepath/jsonrpc`.
 
 `GET /.well-known/agents` returns only agents with `status == available`.
 The `A2A-Version` request header controls whether cards are returned in v0.3 or v1.0 format.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oo-a2a-registry"
-version = "0.1.0"
+version = "0.2.0"
 description = "Server and client library for A2A agent discovery via heartbeat registration"
 readme = "README.md"
 license = { text = "MIT" }

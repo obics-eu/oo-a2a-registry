@@ -26,6 +26,12 @@ def make_client(app):
     )
 
 
+def test_heartbeat_endpoint_is_under_well_known():
+    from a2a_registry.server.app import HEARTBEAT_ENDPOINT
+
+    assert HEARTBEAT_ENDPOINT == "/.well-known/agents/heartbeat"
+
+
 async def test_list_agents_empty(app):
     async with make_client(app) as client:
         resp = await client.get("/.well-known/agents")
@@ -48,7 +54,7 @@ async def test_heartbeat_verifies_agent(app, sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -68,7 +74,7 @@ async def test_heartbeat_registers_and_lists_agent(app, sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -90,7 +96,7 @@ async def test_heartbeat_unreachable_agent_stays_unverified(app, sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -111,7 +117,7 @@ async def test_second_heartbeat_skips_refetch(app, sample_card):
     async with make_client(app) as client:
         for _ in range(2):
             await client.post(
-                "/registry/heartbeat",
+                "/.well-known/agents/heartbeat",
                 content=payload.model_dump_json(),
                 headers={"Content-Type": "application/json"},
             )
@@ -156,7 +162,7 @@ async def test_v1_heartbeat_verifies_agent(app, sample_card_v1):
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -176,7 +182,7 @@ async def test_v1_heartbeat_registers_and_lists_agent(app, sample_card_v1):
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
     async with make_client(app) as client:
         await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -202,7 +208,7 @@ async def test_v1_falls_back_to_agent_json(app, sample_card_v1):
     payload = HeartbeatRequest(agent_card=sample_card_v1, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -221,11 +227,132 @@ async def test_v03_falls_back_to_agent_card_json(app, sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
     assert resp.json()["verified"] is True
+
+
+# ---------------------------------------------------------------------------
+# Basepath support (agent base url like http://host:8001/basepath)
+# ---------------------------------------------------------------------------
+
+def make_basepath_card() -> AgentCard:
+    """v0.3 card whose base URL includes a basepath."""
+    return AgentCard(
+        name="BasePath Agent",
+        description="Agent served under a basepath",
+        url="http://agent.example.com/basepath",
+        version="1.0.0",
+    )
+
+
+def make_basepath_card_v1() -> AgentCard:
+    """v1.0 card whose interface URL lives under a basepath."""
+    return AgentCard(
+        name="BasePath Agent v1",
+        supportedInterfaces=[
+            AgentInterface(
+                url="http://agent.example.com/basepath/jsonrpc",
+                protocolBinding="json-rpc/2.0",
+                protocolVersion="1.0",
+            )
+        ],
+        version="1.0.0",
+    )
+
+
+@respx.mock
+async def test_heartbeat_verifies_agent_under_basepath(app):
+    """v0.3 agent with basepath — card is fetched from {base}/basepath/.well-known/."""
+    card = make_basepath_card()
+    route = respx.get("http://agent.example.com/basepath/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=card.model_dump())
+    )
+
+    payload = HeartbeatRequest(agent_card=card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/.well-known/agents/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.json()["verified"] is True
+    assert route.called
+
+
+@respx.mock
+async def test_v1_heartbeat_verifies_agent_under_basepath(app):
+    """v1.0 agent with basepath — interface path segment stripped to find the card."""
+    card = make_basepath_card_v1()
+    route = respx.get("http://agent.example.com/basepath/.well-known/agent-card.json").mock(
+        return_value=httpx.Response(200, json=card.model_dump())
+    )
+    # The interface URL itself does not serve a card
+    respx.get("http://agent.example.com/basepath/jsonrpc/.well-known/agent-card.json").mock(
+        return_value=httpx.Response(404)
+    )
+    respx.get("http://agent.example.com/basepath/jsonrpc/.well-known/agent.json").mock(
+        return_value=httpx.Response(404)
+    )
+
+    payload = HeartbeatRequest(agent_card=card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/.well-known/agents/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.json()["verified"] is True
+    assert route.called
+
+
+@respx.mock
+async def test_basepath_agent_falls_back_to_origin(app):
+    """Basepath well-known missing — verification falls back to the origin."""
+    card = make_basepath_card()
+    respx.get("http://agent.example.com/basepath/.well-known/agent.json").mock(
+        return_value=httpx.Response(404)
+    )
+    respx.get("http://agent.example.com/basepath/.well-known/agent-card.json").mock(
+        return_value=httpx.Response(404)
+    )
+    origin_route = respx.get("http://agent.example.com/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=card.model_dump())
+    )
+
+    payload = HeartbeatRequest(agent_card=card, interval=30)
+    async with make_client(app) as client:
+        resp = await client.post(
+            "/.well-known/agents/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.json()["verified"] is True
+    assert origin_route.called
+
+
+@respx.mock
+async def test_basepath_agent_registers_and_lists(app):
+    """Basepath agent appears in /.well-known/agents with its full base URL."""
+    card = make_basepath_card()
+    respx.get("http://agent.example.com/basepath/.well-known/agent.json").mock(
+        return_value=httpx.Response(200, json=card.model_dump())
+    )
+
+    payload = HeartbeatRequest(agent_card=card, interval=30)
+    async with make_client(app) as client:
+        await client.post(
+            "/.well-known/agents/heartbeat",
+            content=payload.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+        resp = await client.get("/.well-known/agents", headers={"A2A-Version": "0.3"})
+
+    agents = resp.json()
+    assert len(agents) == 1
+    assert agents[0]["url"] == "http://agent.example.com/basepath"
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +368,7 @@ async def test_heartbeat_returns_202(app, sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -260,7 +387,7 @@ async def test_heartbeat_includes_retry_after_header(sample_card):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )
@@ -280,7 +407,7 @@ async def test_heartbeat_retry_after_uses_env_default(sample_card, monkeypatch):
     payload = HeartbeatRequest(agent_card=sample_card, interval=30)
     async with make_client(app) as client:
         resp = await client.post(
-            "/registry/heartbeat",
+            "/.well-known/agents/heartbeat",
             content=payload.model_dump_json(),
             headers={"Content-Type": "application/json"},
         )

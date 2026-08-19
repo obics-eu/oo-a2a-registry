@@ -197,7 +197,7 @@ def _app_with_v1_agent(sample_card_v1):
 async def _register(client, card):
     payload = HeartbeatRequest(agent_card=card, interval=30)
     await client.post(
-        "/registry/heartbeat",
+        "/.well-known/agents/heartbeat",
         content=payload.model_dump_json(),
         headers={"Content-Type": "application/json"},
     )

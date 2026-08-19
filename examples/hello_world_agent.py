@@ -5,6 +5,10 @@ The agent card is built with ``a2a.types.AgentCard`` (protobuf), converted
 to the registry's Pydantic model for the heartbeat client, and served
 directly from the protobuf serialisation on the well-known endpoint.
 
+The agent is served under a basepath (http://localhost:8001/basepath) to
+demonstrate that the registry discovers well-known cards below a basepath,
+not only at the bare origin.
+
 Install:
     pip install "oo-a2a-registry[server]" a2a-sdk
 
@@ -27,7 +31,7 @@ from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
 from a2a_registry import RegistryClient
 from a2a_registry.models import AgentCard as RegistryCard
 
-AGENT_BASE_URL = "http://localhost:8001"
+AGENT_BASE_URL = "http://localhost:8001/basepath"
 REGISTRY_URL = "http://localhost:8000"
 
 
@@ -70,8 +74,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Hello World Agent", lifespan=lifespan)
 
 
-@app.get("/.well-known/agent-card.json")
-@app.get("/.well-known/agent.json")
+@app.get("/basepath/.well-known/agent-card.json")
+@app.get("/basepath/.well-known/agent.json")
 async def agent_card():
     return MessageToDict(_a2a_card)
 
